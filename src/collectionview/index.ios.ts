@@ -640,16 +640,18 @@ export class CollectionView extends CollectionViewBase {
                 this._addView(view);
                 const innerView = NSCellView.new() as NSCellView;
                 innerView.view = new WeakRef(view);
-                if(!notForCellSizeComp || this.autoReloadItemOnLayout) {
+                if (!notForCellSizeComp || this.autoReloadItemOnLayout) {
                     // for a cell to update correctly on cell layout change we need
                     // to do it ourself instead of "propagating it"
                     view['performLayout'] = () => {
                         if (notForCellSizeComp) {
                             this.measureCell(cell, view, indexPath);
                             this.layoutCell(indexPath.row, cell, view);
-                            this.nativeViewProtected.collectionViewLayout.invalidateLayout()
+                            this.nativeViewProtected.collectionViewLayout.invalidateLayout();
                         }
                     };
+                } else {
+                    console.log('prepared for template');
                 }
                 innerView.addSubview(view.nativeViewProtected);
                 cell.contentView.addSubview(innerView);
@@ -812,11 +814,53 @@ export class CollectionView extends CollectionViewBase {
         }
         return cell;
     }
+    lastVisibleItem: NSIndexPath;
+    enterAnimationFinished = false;
+    isAnimationEnable = true;
     collectionViewWillDisplayCellForItemAtIndexPath(collectionView: UICollectionView, cell: UICollectionViewCell, indexPath: NSIndexPath) {
         if (this.reverseLayout) {
             cell.transform = CGAffineTransformMakeRotation(-Math.PI);
         }
         if (this.items) {
+            if (!this.lastVisibleItem) {
+                this.lastVisibleItem = collectionView.indexPathsForVisibleItems?.lastObject;
+            }
+
+            //    guard let lastVisibleRow = lastVisibleItem?.row , !enterAnimationFinished else { return  }
+
+            let lastVisibleRow = this.lastVisibleItem?.row;
+            if (!this.enterAnimationFinished) {
+                if (indexPath.row <= lastVisibleRow) {
+                    let delay = indexPath.row * 0.05;
+
+                    cell.alpha = 0.0;
+                    cell.transform = CGAffineTransformMakeScale(0.5, 0.7); //.translatedBy(x: 0, y: 50)
+
+                    UIView.animateWithDurationDelayUsingSpringWithDampingInitialSpringVelocityOptionsAnimationsCompletion(
+                        0.3,
+                        delay,
+                        0.8,
+                        0.8,
+                        UIViewAnimationOptions.CurveEaseOut,
+                        () => {
+                            cell.alpha = 1.0;
+                            cell.transform = CGAffineTransformIdentity;
+                        },
+                        () => {}
+                    );
+                    // UIView.animate(withDuration: 0.3, delay: delay, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.8, options: [.curveEaseOut], animations: {
+                    //     cell.alpha=1.0
+                    //     cell.transform = .identity
+                    // }, completion: nil)
+                }
+
+                if (indexPath.row >= lastVisibleRow) {
+                    this.enterAnimationFinished = true;
+                    this.isAnimationEnable = true;
+                }
+            }
+
+
             const loadMoreItemIndex = this.items.length - this.loadMoreThreshold;
             if (indexPath.row === loadMoreItemIndex && this.hasListeners(CollectionViewBase.loadMoreItemsEvent)) {
                 this.notify<EventData>({
@@ -855,6 +899,12 @@ export class CollectionView extends CollectionViewBase {
         cell.highlighted = false;
 
         return indexPath;
+    }
+    collectionViewDidHighlightItemAtIndexPath(collectionView: UICollectionView, indexPath: NSIndexPath): void {
+        // users can override to define tap animations
+    }
+    collectionViewDidUnhighlightItemAtIndexPath(collectionView: UICollectionView, indexPath: NSIndexPath): void {
+        // users can override to define tap animations
     }
     collectionViewLayoutSizeForItemAtIndexPath(collectionView: UICollectionView, collectionViewLayout: UICollectionViewLayout, indexPath: NSIndexPath) {
         const row = indexPath.row;
@@ -1057,6 +1107,18 @@ class UICollectionViewDelegateImpl extends NSObject implements UICollectionViewD
             return owner.collectionViewDidSelectItemAtIndexPath(collectionView, indexPath);
         }
         return indexPath;
+    }
+    collectionViewDidHighlightItemAtIndexPath(collectionView: UICollectionView, indexPath: NSIndexPath): void {
+        const owner = this._owner.get();
+        if (owner) {
+            return owner.collectionViewDidHighlightItemAtIndexPath(collectionView, indexPath);
+        }
+    }
+    collectionViewDidUnhighlightItemAtIndexPath(collectionView: UICollectionView, indexPath: NSIndexPath): void {
+        const owner = this._owner.get();
+        if (owner) {
+            return owner.collectionViewDidUnhighlightItemAtIndexPath(collectionView, indexPath);
+        }
     }
     collectionViewLayoutSizeForItemAtIndexPath(collectionView: UICollectionView, collectionViewLayout: UICollectionViewLayout, indexPath: NSIndexPath) {
         const owner = this._owner.get();
